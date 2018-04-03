@@ -6,10 +6,35 @@ import os
 import time
 import json
 import keras
-import dataset
+import metrics_fmeasure
+
+#TODO https://github.com/abbypa/NNProject_DeepMask
+#TODO https://github.com/divamgupta/image-segmentation-keras
 
 def get_default_config():
     config={}
+    config={}
+    config['encoder']='vgg16'
+    # model input size, use None for convinience, but in fact use 224x224
+    config['input_shape']=[None,None,None]
+    # model output size, for benchmark, we need post-processing
+    config['target_size']=(224,224)
+    config['optimizer']='adam'
+    config['learning_rate']=0.01
+    config['log_dir']=os.path.join(os.getenv('HOME'),'tmp','logs','sementic')
+    config['checkpoint_dir']=config['log_dir']
+    config['model_name']='semantic_segmentation_motion_net'
+    config['note']='default'
+    config['epoches']=30
+    config['batch_size']=32
+    config['merge_type']='concat'
+    config['dropout_ratio']=0.1
+    config['data_format']='channels_last'
+    
+    # dataset
+    config['dataset_name']='kitti2015'
+    config['dataset_train_root']='/media/sdb/CVDataset/ObjectSegmentation/Kitti2015_archives/data_semantics/training'
+    config['task']='semantic'
     
     return config
 
@@ -29,6 +54,7 @@ def get_dataset(config):
         pass
     else:
         pass
+
 class semantic_segmentation_basic():
     def __init__(self):
         self.name=self.__class__.__name__
@@ -56,6 +82,7 @@ class semantic_segmentation_basic():
         version_dict['semantic_segmentation_dilation_net']="0.4"
         version_dict['semantic_segmentation_segnet']="0.5"
         version_dict['semantic_segmentation_enet']="0.6"
+        version_dict['semantic_segmentation_motion_net']='0.7'
         return version_dict[class_name]
 
     @staticmethod
@@ -118,3 +145,9 @@ class semantic_segmentation_basic():
         else:
             print('warning: unknown merge type %s' % mode)
             assert False
+            
+    @staticmethod
+    def get_metrics():
+        return [metrics_fmeasure.precision,
+                metrics_fmeasure.recall,
+                metrics_fmeasure.fmeasure]

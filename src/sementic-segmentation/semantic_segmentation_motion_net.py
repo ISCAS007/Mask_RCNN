@@ -3,37 +3,44 @@
 motion net structure for semantic segmentation
 """
 
-from semantic_segmentation_basic import semantic_segmentation_basic
-from encoder.encoder_basic import encoder_basic
+import semantic_segmentation_basic
+from encoder import encoder_basic
 import keras
 from keras.layers import Conv2D, Conv2DTranspose
+from dataset_rob2018 import dataset_rob2018
 
 
-class semantic_segmentation_motion_net(semantic_segmentation_basic):
+class semantic_segmentation_motion_net(semantic_segmentation_basic.semantic_segmentation_basic):
     def __init__(self, config):
         self.config = config
         self.name = self.__class__.__name__
         self.version = self.get_version(self.name)
+        self.dataset = dataset_rob2018(config)
+        self.config['class_number'] = self.dataset.num_classes[config['dataset_name']]
+        self.model=self.get_model()
 
     def train(self):
         self.model.compile(loss='mse',
-                           optimizer='adam')
+                           optimizer='adam',
+                           metrics=self.get_metrics())
 
-        dataset = self.get_dataset(self.config)
-        train_main_input_paths, test_main_input_paths = dataset.get_main_input_list()
+        dataset = self.dataset
+        train_main_input_paths, val_main_input_paths = dataset.get_train_val()
 
         print('train dataset size', len(train_main_input_paths))
-        print('test dataset size', len(test_main_input_paths))
+        print('test dataset size', len(val_main_input_paths))
 
-        self.model.fit_generator(generator=dataset.batch_gen(train_main_input_paths, 'trainval'),
-                                 steps_per_epoch=dataset.get_steps_per_epoch(
-                                     train_main_input_paths),
+        batch_size = self.config['batch_size']
+        print('batch size is',batch_size)
+        self.model.fit_generator(generator=dataset.batch_gen_images(train_main_input_paths, batch_size),
+                                 steps_per_epoch=len(
+                                     train_main_input_paths)//batch_size,
                                  epochs=self.config['epoches'],
                                  verbose=1,
                                  callbacks=self.get_callbacks(self.config),
-                                 validation_data=dataset.batch_gen(
-                                     test_main_input_paths, 'trainval'),
-                                 validation_steps=dataset.get_steps_per_epoch(test_main_input_paths))
+                                 validation_data=dataset.batch_gen_images(
+                                     val_main_input_paths, batch_size),
+                                 validation_steps=len(val_main_input_paths)//batch_size)
 
     def get_model(self):
         # h, w, c = self.config['input_shape']
@@ -99,3 +106,18 @@ class semantic_segmentation_motion_net(semantic_segmentation_basic):
                                            outputs=outputs)
 
         return model
+
+
+if __name__ == '__main__':
+    config=semantic_segmentation_basic.get_default_config()
+    config['dataset_name']='kitti2015'
+    config['dataset_train_root']='/media/sdb/CVDataset/ObjectSegmentation/Kitti2015_archives/data_semantics/training'
+    config['task']='semantic'
+    config['model_name']='semantic_segmentation_motion_net'
+    config['batch_size']=20
+    config['encoder']='mobilenet'
+    config['note']='mobilenet'
+    config['epoches']=300
+    
+    net=semantic_segmentation_motion_net(config)
+    net.train()
