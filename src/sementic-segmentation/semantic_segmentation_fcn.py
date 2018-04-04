@@ -16,7 +16,7 @@ class semantic_segmentation_fcn(semantic_segmentation_basic.semantic_segmentatio
         self.name = self.__class__.__name__
         self.version = self.get_version(self.name)
         self.dataset = dataset_rob2018(config)
-        self.config['class_number'] = self.dataset.num_classes[config['dataset_name']]
+        self.config['class_number'] = self.dataset.num_classes
         self.model = self.get_model()
 
     @staticmethod
@@ -72,7 +72,6 @@ if __name__ == '__main__':
 
     for model_fcn in get_model_names():
         config['model_fcn'] = model_fcn
-    
         config['note'] = config['model_fcn']
         if config['model_fcn'] is 'AtrousFCN_Resnet50_16s':
             config['weight_decay_fcn'] = 0.0001/2

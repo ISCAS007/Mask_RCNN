@@ -16,7 +16,7 @@ class semantic_segmentation_motion_net(semantic_segmentation_basic.semantic_segm
         self.name = self.__class__.__name__
         self.version = self.get_version(self.name)
         self.dataset = dataset_rob2018(config)
-        self.config['class_number'] = self.dataset.num_classes[config['dataset_name']]
+        self.config['class_number'] = self.dataset.num_classes
         self.model=self.get_model()
 
     def train(self):
