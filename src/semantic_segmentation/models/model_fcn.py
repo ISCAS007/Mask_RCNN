@@ -18,10 +18,10 @@ from keras.applications.imagenet_utils import _obtain_input_shape
 import keras.backend as K
 import tensorflow as tf
 
-from decoder.utils.get_weights_path import *
-from decoder.utils.basics import *
-from decoder.utils.resnet_helpers import *
-from decoder.utils.BilinearUpSampling import *
+from .utils.get_weights_path import *
+from .utils.basics import *
+from .utils.resnet_helpers import *
+from .utils.BilinearUpSampling import *
 
 
 def top(x, input_shape, classes, activation, weight_decay):
@@ -45,8 +45,8 @@ def get_model_names():
     return ['FCN_Vgg16_32s',
             'AtrousFCN_Vgg16_16s',
             'FCN_Resnet50_32s',
-            'AtrousFCN_Resnet50_16s',
-            'Atrous_DenseNet']
+            'AtrousFCN_Resnet50_16s']
+#            'Atrous_DenseNet']
 #            'DenseNet_FCN']
 
 def FCN_Vgg16_32s(input_shape=None, weight_decay=0., batch_momentum=0.9, batch_shape=None, classes=21):

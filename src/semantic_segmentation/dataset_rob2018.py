@@ -10,7 +10,7 @@ import os
 import random
 import math
 import keras
-
+import pickle
 
 def get_rob2018_dataset_names():
     return ['cityscapes', 'kitti2015', 'scannet', 'wilddash']
@@ -60,6 +60,61 @@ def preprocess_image_mask(y, num_classes):
     y_category = y_category.reshape([b, h, w, num_classes])
     return y_category
 
+def get_centered_data(instance_image_list,target_size):
+    """
+    data={'shape':img.shape,
+          'offset_image':offset_img,
+          'center_points':center_points,
+          'instances':instances}
+    """
+    
+    # offset image and center point image
+    offset_images=[]
+    cp_images=[]
+    
+    for img_file in instance_image_list:
+        task_dir=os.path.dirname(img_file)
+        root_dir=os.path.dirname(task_dir)
+        base_name=os.path.basename(img_file)
+        pickle_name=base_name.split('.')[0]+".pkl"
+        pickle_path=os.path.join(root_dir,'centered_data',pickle_name)
+        
+        if not os.path.exists(pickle_path):
+            print('unexist path for',pickle_path)
+            assert False
+        
+        f=open(pickle_path,'rb')
+        data=pickle.load(f)
+        offset_image=data['offset_image']
+        h,w,c=offset_image.shape
+        
+        # range in [-1,1], use sigmoid
+        x_offset=offset_image[:,:,0]/(1.0*w)
+        y_offset=offset_image[:,:,1]/(1.0*h)
+        
+        resize_offset=np.zeros(target_size+(2,),dtype=np.float32)
+        resize_offset[:,:,0]=cv2.resize(x_offset,target_size)
+        resize_offset[:,:,1]=cv2.resize(y_offset,target_size)
+        
+        center_points=data['center_points']
+        smooth_size=2*10+1
+        smooth_sigma=5
+        center_point_image=np.zeros((h,w),dtype=np.float32)
+        for x,y in center_points:
+            center_point_image[y,x]=1
+        
+        center_point_image=cv2.GaussianBlur(center_point_image,smooth_size,smooth_sigma)
+        
+        # make center point to 1
+        for x,y in center_points:
+            center_point_image[y,x]=1
+
+        # range in [0,1], use relu
+        resize_cp_image=cv2.resize(center_point_image,target_size)
+        
+        offset_images.append(resize_offset)
+        cp_images.append(resize_cp_image.reshape(target_size+(1,)))
+    return np.asarray(offset_images, dtype=np.float32),np.asarray(cp_images, dtype=np.float32)
 
 class dataset_rob2018():
     """
@@ -120,11 +175,30 @@ class dataset_rob2018():
                     y = np.asarray(y, dtype=np.float32)
                     images_batchs.append(preprocess_image_mask(
                         y, self.num_classes))
+                elif _task == 'instance':
+                    y = [cv2.resize(
+                        img, self.target_size, interpolation=cv2.INTER_NEAREST) for img in img_list]
+                    
+                    y = np.asarray(y, dtype=np.float32)
+                    images_batchs.append(preprocess_image_mask(
+                        y, self.num_classes))
+                    
+                    # center offset [-1,1] + center mask [0,1]
+                    y_offset,y_center=get_centered_data(_list,self.target_size)
+                    assert y_offset.ndim==4
+                    assert y_center.ndim==4
+                    
+                    images_batchs.append(y_offset)
+                    images_batchs.append(y_center)
                 else:
                     print('undefined precessing for task', _task)
                     assert False
-
-            assert len(images_batchs) == 2
+            
+            if self.task=='semantic':
+                assert len(images_batchs) == 2
+            else:
+                assert len(images_batchs) == 4
+                
             assert images_batchs[0].ndim == 4
             assert images_batchs[1].ndim == 4
             yield images_batchs
@@ -170,11 +244,15 @@ class dataset_rob2018():
             print('create them by random')
             image_dir = os.path.join(self.dataset_train_root, 'image_2')
             _list = os.listdir(image_dir)
+#            print('_list size is',len(_list))
             img_suffix = ('png', 'jpg', 'jpeg', 'bmp')
             img_list = [f for f in _list if f.lower().endswith(
                 img_suffix) and f.lower().startswith(self.dataset_filters.lower())]
             list_size = len(img_list)
-            assert list_size==self.dataset_size_dict[self.dataset_name]
+            if list_size != self.dataset_size_dict[self.dataset_name]:
+                print('except size is',self.dataset_size_dict[self.dataset_name])
+                print('infact size is',list_size)
+                assert False
             
             random.shuffle(img_list)
             train_size = list_size*3//5

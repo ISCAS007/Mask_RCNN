@@ -3,11 +3,11 @@
 FCN for sementic segmenation
 """
 import semantic_segmentation_basic
-from decoder.utils.metrics import sparse_accuracy_ignoring_last_label as sparse_acc
+from models.utils.metrics import sparse_accuracy_ignoring_last_label as sparse_acc
 import keras
 from keras.layers import Conv2D, Conv2DTranspose
 from dataset_rob2018 import dataset_rob2018
-from decoder.decoder_fcn import *
+from models.model_fcn import *
 
 
 class semantic_segmentation_fcn(semantic_segmentation_basic.semantic_segmentation_basic):
@@ -19,12 +19,12 @@ class semantic_segmentation_fcn(semantic_segmentation_basic.semantic_segmentatio
         self.config['class_number'] = self.dataset.num_classes
         self.model = self.get_model()
 
-    @staticmethod
-    def get_metrics():
-        metrics = semantic_segmentation_basic.semantic_segmentation_basic.get_metrics()
-        metrics.append(sparse_acc)
-        
-        return metrics
+#    @staticmethod
+#    def get_metrics():
+#        metrics = semantic_segmentation_basic.semantic_segmentation_basic.get_metrics()
+#        metrics.append(sparse_acc)
+#        
+#        return metrics
 
     def train(self):
         self.model.compile(loss='mse',
@@ -62,13 +62,14 @@ class semantic_segmentation_fcn(semantic_segmentation_basic.semantic_segmentatio
 
 if __name__ == '__main__':
     config = semantic_segmentation_basic.get_default_config()
-    config['dataset_name'] = 'kitti2015'
-    config['dataset_train_root'] = '/media/sdb/CVDataset/ObjectSegmentation/Kitti2015_archives/data_semantics/training'
+    config['dataset_name'] = 'cityscapes'
+    config['dataset_train_root'] = '/media/sdb/CVDataset/ObjectSegmentation/datasets_kitti2015/training'
     config['task'] = 'semantic'
     config['model_name'] = 'semantic_segmentation_fcn'
     config['batch_size'] = 20
 #    config['decoder']='mobilenet'
-    config['epoches'] = 300
+    config['epoches'] = 30
+    config['test_mean_iou']=True
 
     for model_fcn in get_model_names():
         config['model_fcn'] = model_fcn
@@ -77,8 +78,8 @@ if __name__ == '__main__':
             config['weight_decay_fcn'] = 0.0001/2
         else:
             config['weight_decay_fcn'] = 1e-4
-
+    
         config['batchnorm_momentum'] = 0.95
-
+    
         net = semantic_segmentation_fcn(config)
         net.train()
