@@ -8,9 +8,19 @@ import os
 import time
 import json
 import keras
-from ..semantic_segmentation import metrics_fmeasure
-from ..semantic_segmentation import metrics_iou
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from skimage.feature import peak_local_max
 
+lib_path=os.path.abspath(os.path.join('../semantic_segmentation'))
+sys.path.append(lib_path)
+#from ..semantic_segmentation import metrics_fmeasure
+#from ..semantic_segmentation import metrics_iou
+import metrics_fmeasure
+import metrics_iou
+import glob
 
 def get_default_config():
     config = {}
@@ -59,7 +69,41 @@ def get_dataset(config):
     else:
         pass
 
-
+def show_result(y_category,y_offset,y_center):
+    """
+    y_category [h,w,class_propabilities]
+    y_offset [h,w,2] for x and y
+    y_center [h,w] for y_center(x,y)=1 if (x,y) is center points
+    """
+    assert y_category.ndim==3
+    h,w,c=y_category.shape
+#    image_category=np.zeros((h,w),dtype=np.uint8)
+    image_category=np.argmax(y_category,axis=-1).astype(np.uint8)
+    image_offset=np.zeros((h,w,3),dtype=np.float32)
+    image_offset[:,:,0:2]=(y_offset+1)/2.0
+    image_center=y_center
+    
+    fig,axs=plt.subplots(2,2)
+    axs[0,0].imshow(image_category)
+    axs[0,0].title('category')
+    axs[0,1].imshow(image_offset)
+    axs[0,1].title('offset')
+    axs[1,0].imshow(image_center)
+    axs[1,0].title('center')
+    
+    plt.show()
+def get_newest_file(files):
+        t=0
+        newest_file=None
+        for full_f in files:
+            if os.path.isfile(full_f):
+                file_create_time = os.path.getctime(full_f)
+                if file_create_time > t:
+                    t = file_create_time
+                    newest_file = full_f
+        
+        return newest_file
+    
 class instance_segmentation_basic():
     def __init__(self):
         self.name = self.__class__.__name__
@@ -162,3 +206,58 @@ class instance_segmentation_basic():
                                    metrics_fmeasure.fmeasure],
                     'y_offset': 'mse',
                     'y_center': 'mse'}
+            
+    
+    def get_instance_segmentation_by_kmeans(self,y_category,y_offset,y_center):
+        assert y_offset.ndim==3
+        h,w,c=y_offset.shape
+        
+        y_category=np.argmax(y_category,axis=-1)
+        assert h==y_category.shape[0]
+        assert w==y_category.shape[1]
+        
+        category_weight=self.config['category_weight']
+        center_threshold=self.config['center_threshold']
+        center_min_gap=self.config['center_min_gap']
+        
+        data=[]
+        for i in range(h):
+            for j in range(w):
+                label=category_weight*y_category[i,j]
+                x_center=j+y_offset[i,j,0]
+                y_center=i+y_offset[i,j,1]
+                data.append([label,i,j,x_center,y_center])
+        
+        xy_local_max=peak_local_max(y_center,min_distance=center_min_gap,threshold_abs=center_threshold)
+        if len(xy_local_max)==0:
+            print('warning: xy_local_max is empty')
+            n_clusters=len(np.unique(y_category))
+        else:
+            n_clusters=len(xy_local_max)
+        
+        data=np.array(data,dtype=np.float32)
+        kmeans=KMeans(n_clusters=n_clusters).fit(data)
+        instance_img=kmeans.labels_.reshape(h,w)
+        
+        return instance_img,xy_local_max
+    
+    
+    
+    @staticmethod
+    def get_weight_path(checkpoint_path):
+        if os.path.isdir(checkpoint_path):
+            files = glob.glob(os.path.join(checkpoint_path,'*.hdf5'))
+            if len(files)==0:
+                files = glob.glob(os.path.join(checkpoint_path,'*','*.hdf5'))
+            newest_file = get_newest_file(files)
+
+            if newest_file is None:
+                print('no weight file find in path',checkpoint_path)
+                return None
+            else:
+                return newest_file
+        elif os.path.isfile(checkpoint_path):
+            return checkpoint_path
+        else:
+            print('checkpoint_path is not a dir or a file!!!')
+            sys.exit(-1)

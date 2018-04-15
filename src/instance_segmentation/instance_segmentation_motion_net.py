@@ -3,14 +3,24 @@
 motion net structure for instance segmentation
 """
 
+import os
+import sys
+lib_path = os.path.abspath(os.path.join('../semantic_segmentation'))
+sys.path.append(lib_path)
+lib_path = os.path.abspath(os.path.join('.'))
+sys.path.append(lib_path)
 import basic_net
-from ..semantic_segmentation.models import model_basic
+#from ..semantic_segmentation.models import model_basic
 import keras
 from keras.layers import Conv2D, Conv2DTranspose
-from ..semantic_segmentation.dataset_rob2018 import dataset_rob2018
+#from ..semantic_segmentation.dataset_rob2018 import dataset_rob2018
+from models import model_basic
+from dataset_rob2018 import dataset_rob2018, show_images
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-class is_simple(model_basic):
+class is_simple(basic_net.instance_segmentation_basic):
     def __init__(self, config):
         self.config = config
         self.name = self.__class__.__name__
@@ -75,31 +85,42 @@ class is_simple(model_basic):
 
             else:
                 y_category = Conv2D(filters=self.config['class_number'],
-                                 kernel_size=(3, 3),
-                                 activation='softmax',
-                                 padding='same',
-                                 data_format=data_format)(merge_output)
-                
+                                    kernel_size=(3, 3),
+                                    activation='softmax',
+                                    padding='same',
+                                    data_format=data_format,
+                                    name='y_category')(merge_output)
+
                 y_offset = Conv2D(filters=2,
-                                 kernel_size=(3, 3),
-                                 activation='sigmoid',
-                                 padding='same',
-                                 data_format=data_format)(merge_output)
-                
-                y_center = Conv2D(filters=1,
-                                 kernel_size=(3, 3),
-                                 activation='relu',
-                                 padding='same',
-                                 data_format=data_format)(merge_output)
+                                  kernel_size=(3, 3),
+                                  activation='tanh',
+                                  padding='same',
+                                  data_format=data_format,
+                                  name='y_offset')(merge_output)
+
+                if self.config['sub_version'] == 'two_stage':
+                    y_center = Conv2D(filters=1,
+                                      kernel_size=(3, 3),
+                                      activation='sigmoid',
+                                      padding='same',
+                                      data_format=data_format,
+                                      name='y_center')(y_offset)
+                else:
+                    y_center = Conv2D(filters=1,
+                                      kernel_size=(3, 3),
+                                      activation='sigmoid',
+                                      padding='same',
+                                      data_format=data_format,
+                                      name='y_center')(merge_output)
 
                 model = keras.models.Model(inputs=input_layers[0].input,
-                                           outputs=[y_category,y_offset,y_center])
+                                           outputs=[y_category, y_offset, y_center])
 
         return model
 
     def train(self):
-        metrics=self.get_metrics(self.config['class_number'])
-        
+        metrics = self.get_metrics(self.config['class_number'])
+
         self.model.compile(loss='mse',
                            optimizer='adam',
                            metrics=metrics)
@@ -111,7 +132,7 @@ class is_simple(model_basic):
         print('test dataset size', len(val_main_input_paths))
 
         batch_size = self.config['batch_size']
-        print('batch size is',batch_size)
+        print('batch size is', batch_size)
         self.model.fit_generator(generator=dataset.batch_gen_images(train_main_input_paths, batch_size),
                                  steps_per_epoch=len(
                                      train_main_input_paths)//batch_size,
@@ -122,17 +143,79 @@ class is_simple(model_basic):
                                      val_main_input_paths, batch_size),
                                  validation_steps=len(val_main_input_paths)//batch_size)
 
-if __name__ == '__main__':
-    config=basic_net.get_default_config()
-#    config['dataset_name']='kitti2015'
-    config['dataset_name']='cityscapes'
-    config['dataset_train_root']='/media/sdb/CVDataset/ObjectSegmentation/datasets_kitti2015/training'
-    config['task']='instance'
-    config['model_name']='is_simple'
-    config['batch_size']=20
-    config['encoder']='mobilenet'
-    config['note']='mobilenet'
-    config['epoches']=30
+    def showcase(self, n=3):
+        weights_file = self.get_weight_path(
+            self.config['weight_load_dir_or_file'])
+        if weights_file is None:
+            return 0
+
+        self.model.load_weights(weights_file)
+
+        count = 0
+        for imgs, x in self.dataset.batch_gen_inputs_for_test(self.config['batch_size'], shuffle=True):
+            y_category, y_offset, y_center = self.model.predict(x)
+            for img, a, b, c in zip(imgs, y_category, y_offset, y_center):
+                instance_img, xy_local_max = self.get_instance_segmentation_by_kmeans(
+                    a, b, c)
+                instance_img = instance_img.astype(np.int64)
+                semantic_img = np.argmax(a, axis=-1).astype(np.int64)
+                
+                if len(xy_local_max) > 0:
+                    h, w = instance_img.shape
+                    center_img = np.zeros((h, w), np.uint8)
     
-    net=is_simple(config)
-    net.train()
+                    d = 5
+                    for y, x in xy_local_max:
+                        for i in range(x-d, x+d):
+                            for j in range(y-d, y+d):
+                                if i >= 0 and j >= 0 and i < w and j < h:
+                                    center_img[j, i] = 255
+                else:
+                    center_img=c.reshape(self.config['target_size'])
+                
+                print('center_img shape',center_img.shape,center_img.dtype)
+                print('unique center_img',np.unique(center_img))
+                img=img.astype(np.uint8)
+                show_images([img, instance_img, semantic_img, center_img],
+                            ['image_2', 'instance', 'semantic', 'center'])
+                count = count+1
+                if count >= n:
+                    break
+
+            if count >= n:
+                break
+
+        return 1
+
+
+if __name__ == '__main__':
+    config = basic_net.get_default_config()
+#    config['dataset_name']='kitti2015'
+    config['dataset_name'] = 'cityscapes'
+    config['dataset_train_root'] = '/media/sdb/CVDataset/ObjectSegmentation/datasets_kitti2015/training'
+    config['dataset_test_root'] = '/media/sdb/CVDataset/ObjectSegmentation/datasets_kitti2015/test'
+    config['task'] = 'instance'
+    config['model_name'] = 'is_simple'
+    config['batch_size'] = 20
+    config['encoder'] = 'mobilenet'
+    config['epoches'] = 30
+    config['category_weight'] = 100
+    config['center_threshold'] = 0.1
+    config['center_min_gap'] = 5
+
+    app = 'train'
+    for sub_version in ['one_stage', 'two_stage']:
+        config['sub_version'] == sub_version
+        config['note'] = sub_version
+
+        if app == 'train':
+            # train
+            net = is_simple(config)
+            net.train()
+        elif app == 'showcase':
+            # showcase
+            weight_load_dir_or_file = os.path.join(
+                '/home/yzbx/tmp/logs/instance/cityscapes/is_simple', sub_version)
+            config['weight_load_dir_or_file'] = weight_load_dir_or_file
+            net = is_simple(config)
+            net.showcase(n=3)

@@ -6,19 +6,12 @@ import argparse
 import os
 import urllib
 import tempfile
-import sys
-from util import *
 
-if sys.version_info[0] == 2:
-    import urllib2
-else:
-    import urllib.request
-    
 BASE_URL = 'http://dovahkiin.stanford.edu/scannet-public/'
 TOS_URL = BASE_URL + 'ScanNet_TOS.pdf'
 FILETYPES = ['.aggregation.json', '.sens', '.txt', '_vh_clean.ply', '_vh_clean_2.0.010000.segs.json', '_vh_clean_2.ply', '_vh_clean.segs.json', '_vh_clean.aggregation.json', '_vh_clean_2.labels.ply', '_2d-instance.zip', '_2d-instance-filt.zip', '_2d-label.zip', '_2d-label-filt.zip']
 RELEASE = 'v1/scans'
-RELEASE_TASKS = 'v1/tasks'
+RELEASE_TASKS = 'v1/tasks/'
 RELEASE_SIZE = '1.2TB'
 
 
@@ -40,70 +33,16 @@ def download_release(release_scans, out_dir, file_types):
 
 
 def download_file(url, out_file):
-    print('download url is',url)
-    print('out_file is',out_file)
-    DownloadFile(url,out_file)
-# =============================================================================
-#     print('download url is',url)
-#     print('out_file is',out_file)
-#     out_dir = os.path.dirname(out_file)
-#     if not os.path.isfile(out_file):
-#         print '\t' + url + ' > ' + out_file
-#         fh, out_file_tmp = tempfile.mkstemp(dir=out_dir)
-#         f = os.fdopen(fh, 'w')
-#         f.close()
-#         urllib.urlretrieve(url, out_file_tmp)
-#         os.rename(out_file_tmp, out_file)
-#     else:
-#         print('WARNING: skipping download of existing file ' + out_file)
-# =============================================================================
-
-# Downloads the given URL to a file in the given directory. Returns the
-# path to the downloaded file.
-# In part adapted from: https://stackoverflow.com/questions/22676
-def DownloadFile(url, dest_file_path):
-    if os.path.isfile(dest_file_path):
-        print('The following file already exists:')
-        print(dest_file_path)
-        print('Please choose whether to re-download and overwrite the file [o] or to skip downloading this file [s] by entering o or s.')
-        while True:
-            response = GetUserInput("> ")
-            if response == 's':
-                return dest_file_path
-            elif response == 'o':
-                break
-            else:
-                print('Please enter o or s.')
-    
-    url_object = None
-    if sys.version_info[0] == 2:
-        url_object = urllib2.urlopen(url)
+    out_dir = os.path.dirname(out_file)
+    if not os.path.isfile(out_file):
+        print('\t' + url + ' > ' + out_file)
+        fh, out_file_tmp = tempfile.mkstemp(dir=out_dir)
+        f = os.fdopen(fh, 'w')
+        f.close()
+        urllib.urlretrieve(url, out_file_tmp)
+        os.rename(out_file_tmp, out_file)
     else:
-        url_object = urllib.request.urlopen(url)
-    
-    with open(dest_file_path, 'wb') as outfile:
-        meta = url_object.info()
-        file_size = 0
-        if sys.version_info[0] == 2:
-            file_size = int(meta.getheaders("Content-Length")[0])
-        else:
-            file_size = int(meta["Content-Length"])
-        print("Downloading: %s (size [bytes]: %s)" % (url, file_size))
-        
-        file_size_downloaded = 0
-        block_size = 8192
-        while True:
-            buffer = url_object.read(block_size)
-            if not buffer:
-                break
-            
-            file_size_downloaded += len(buffer)
-            outfile.write(buffer)
-            
-            sys.stdout.write("%d / %d  (%3f%%)\r" % (file_size_downloaded, file_size, file_size_downloaded * 100. / file_size))
-            sys.stdout.flush()
-    
-    return dest_file_path
+        print('WARNING: skipping download of existing file ' + out_file)
 
 def download_scan(scan_id, out_dir, file_types):
     print('Downloading ScanNet scan ' + scan_id + ' ...')

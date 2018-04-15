@@ -98,16 +98,17 @@ def get_centered_data(instance_image_list,target_size):
         
         center_points=data['center_points']
         smooth_size=2*10+1
+        ksize=(smooth_size,smooth_size)
         smooth_sigma=5
         center_point_image=np.zeros((h,w),dtype=np.float32)
         for x,y in center_points:
-            center_point_image[y,x]=1
+            center_point_image[int(y),int(x)]=1
         
-        center_point_image=cv2.GaussianBlur(center_point_image,smooth_size,smooth_sigma)
+        center_point_image=cv2.GaussianBlur(center_point_image,ksize,smooth_sigma)
         
         # make center point to 1
         for x,y in center_points:
-            center_point_image[y,x]=1
+            center_point_image[int(y),int(x)]=1
 
         # range in [0,1], use relu
         resize_cp_image=cv2.resize(center_point_image,target_size)
@@ -126,6 +127,7 @@ class dataset_rob2018():
     def __init__(self, config):
         self.dataset_name = config['dataset_name']
         self.dataset_train_root = config['dataset_train_root']
+        self.dataset_test_root = config['dataset_test_root']
         self.task = config['task']
         self.target_size = config['target_size']
         self.num_classes_dict = {'cityscapes': 34,
@@ -136,7 +138,7 @@ class dataset_rob2018():
         
         self.dataset_size_dict = {'cityscapes': 3475,
                              'kitti2015': 200,
-                             'scannet': 24366,
+                             'scannet': 24353,
                              'wilddash': 70}
         
         self.dataset_filter_dict={'cityscapes': 'Cityscapes',
@@ -176,33 +178,69 @@ class dataset_rob2018():
                     images_batchs.append(preprocess_image_mask(
                         y, self.num_classes))
                 elif _task == 'instance':
-                    y = [cv2.resize(
+                    y_category = [cv2.resize(
                         img, self.target_size, interpolation=cv2.INTER_NEAREST) for img in img_list]
                     
-                    y = np.asarray(y, dtype=np.float32)
-                    images_batchs.append(preprocess_image_mask(
-                        y, self.num_classes))
+                    y_category = np.asarray(y_category, dtype=np.float32)
+                    
+                    y=[]
+                    y.append(preprocess_image_mask(
+                        y_category, self.num_classes))
                     
                     # center offset [-1,1] + center mask [0,1]
                     y_offset,y_center=get_centered_data(_list,self.target_size)
                     assert y_offset.ndim==4
                     assert y_center.ndim==4
                     
-                    images_batchs.append(y_offset)
-                    images_batchs.append(y_center)
+                    y.append(y_offset)
+                    y.append(y_center)
+                    
+                    images_batchs.append(y)
                 else:
                     print('undefined precessing for task', _task)
                     assert False
             
-            if self.task=='semantic':
-                assert len(images_batchs) == 2
-            else:
-                assert len(images_batchs) == 4
+#            if self.task=='semantic':
+#                assert len(images_batchs) == 2
+#            else:
+#                assert len(images_batchs) == 4
                 
             assert images_batchs[0].ndim == 4
-            assert images_batchs[1].ndim == 4
+#            assert images_batchs[1].ndim == 4
             yield images_batchs
-
+    
+    def batch_gen_inputs_for_test(self,batch_size,shuffle=False):
+        """
+        generate images for test dataset
+        """
+        
+        task_root = os.path.join(self.dataset_test_root, 'image_2')
+        image_2_list = self.get_image_file_paths(task_root)
+        paths = [os.path.join(task_root, f) for f in image_2_list]
+        
+        if shuffle:
+            np.random.shuffle(paths)
+        
+        img_list = []
+        for _f in paths:
+            assert os.path.exists(_f)
+            img = cv2.imread(_f)
+            
+            img_list.append(img)
+            if len(img_list)==batch_size:
+                x = [cv2.resize(
+                            img, self.target_size, interpolation=cv2.INTER_LINEAR) for img in img_list]
+                x = np.asarray(x, dtype=np.float32)
+                yield x,preprocess_image_bgr(x)
+                img_list=[]
+        
+        if len(img_list)>0:
+            x = [cv2.resize(
+                            img, self.target_size, interpolation=cv2.INTER_LINEAR) for img in img_list]
+            x = np.asarray(x, dtype=np.float32)
+            yield x,preprocess_image_bgr(x)
+            img_list=[]
+    
     def batch_gen_paths(self, image_2_list, batch_size, output=False):
         """
         input relative image_2 list
@@ -224,7 +262,17 @@ class dataset_rob2018():
                         print('mask is',paths[1][idx:idx+batch_size])
                     else:
                         yield [paths[0][idx:idx+batch_size], paths[1][idx:idx+batch_size]]
-
+    
+    def get_image_file_paths(self,image_dir):
+#        image_dir = os.path.join(self.dataset_train_root, 'image_2')
+        _list = os.listdir(image_dir)
+#            print('_list size is',len(_list))
+        img_suffix = ('png', 'jpg', 'jpeg', 'bmp')
+        img_list = [f for f in _list if f.lower().endswith(
+            img_suffix) and f.lower().startswith(self.dataset_filters.lower())]
+    
+        return img_list
+    
     def get_train_val(self):
         train_txt = os.path.join(
             self.dataset_train_root, '%s_train.txt' % self.dataset_name)
@@ -243,11 +291,7 @@ class dataset_rob2018():
             print('warning: cannot find train txt and val txt', train_txt, val_txt)
             print('create them by random')
             image_dir = os.path.join(self.dataset_train_root, 'image_2')
-            _list = os.listdir(image_dir)
-#            print('_list size is',len(_list))
-            img_suffix = ('png', 'jpg', 'jpeg', 'bmp')
-            img_list = [f for f in _list if f.lower().endswith(
-                img_suffix) and f.lower().startswith(self.dataset_filters.lower())]
+            img_list = self.get_image_file_paths(image_dir)
             list_size = len(img_list)
             if list_size != self.dataset_size_dict[self.dataset_name]:
                 print('except size is',self.dataset_size_dict[self.dataset_name])

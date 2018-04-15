@@ -27,10 +27,10 @@ def get_center_map(img):
         mean_y=m['m01']/m['m00']
         center_points.append((mean_x,mean_y))
         
-        print(obj,mean_x,mean_y)
+#        print(obj,mean_x,mean_y)
         offset_img[:,:,0]+=(x_img-mean_x)*mask_img
         offset_img[:,:,1]+=(y_img-mean_y)*mask_img
-        print(np.unique(offset_img))
+#        print(np.unique(offset_img))
     data={'shape':img.shape,
           'offset_image':offset_img,
           'center_points':center_points,
@@ -69,12 +69,18 @@ if __name__ == '__main__':
         f_pickle=f.split('.')[0]+'.pkl'
         pickle_path=os.path.join(pickle_dir,f_pickle)
         
-        img=cv2.imread(img_path,cv2.IMREAD_GRAYSCALE)
+        if os.path.exists(pickle_path):
+            print('file exists, exit...',pickle_path)
+            break
+        
+        img=cv2.imread(img_path,cv2.IMREAD_UNCHANGED)
+        assert img.dtype == 'uint16'
         data=get_center_map(img)
         output=open(pickle_path,'wb')
         pickle.dump(data,output)
         output.close()
         
+        print('save to',pickle_path)
 #        show_center_map(data,img)
 #        break
 

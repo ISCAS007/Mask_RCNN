@@ -12,8 +12,8 @@ from devkit import *
 
 if __name__ == '__main__':
     # Define the list of benchmarks supported by this script (as listed on http://www.robustvision.net/index.php).
-#    benchmarks = [KITTI2015(), WildDash(), Cityscapes(), ScanNet()]
-    benchmarks = [Cityscapes(),ScanNet()]
+    benchmarks = [KITTI2015(), WildDash(), Cityscapes(), ScanNet()]
+#    benchmarks = [Cityscapes(),ScanNet()]
 
     # Define the list of dataset formats which are supported.
     dataset_formats = [KITTI2015Format()]
