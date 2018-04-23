@@ -64,7 +64,9 @@ if __name__ == '__main__':
     
     pickle_dir=os.path.join(root,'centered_data')
     os.makedirs(pickle_dir,exist_ok=True)
-    for f in img_list:
+    
+    n=len(img_list)
+    for idx,f in enumerate(img_list):
         img_path=os.path.join(image_dir,f)
         f_pickle=f.split('.')[0]+'.pkl'
         pickle_path=os.path.join(pickle_dir,f_pickle)
@@ -80,7 +82,7 @@ if __name__ == '__main__':
         pickle.dump(data,output)
         output.close()
         
-        print('save to',pickle_path)
+        print('%d/%d(%0.2f%%) save to %s'%(idx,n,(100.0*idx/n),pickle_path))
 #        show_center_map(data,img)
 #        break
 

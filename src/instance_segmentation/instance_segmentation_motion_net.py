@@ -152,14 +152,15 @@ class is_simple(basic_net.instance_segmentation_basic):
         self.model.load_weights(weights_file)
 
         count = 0
-        for imgs, x in self.dataset.batch_gen_inputs_for_test(self.config['batch_size'], shuffle=True):
+        for imgs,paths,x in self.dataset.batch_gen_inputs_for_test(self.config['batch_size'], shuffle=True):
             y_category, y_offset, y_center = self.model.predict(x)
-            for img, a, b, c in zip(imgs, y_category, y_offset, y_center):
+            for img,p, a, b, c in zip(imgs,paths, y_category, y_offset, y_center):
                 instance_img, xy_local_max = self.get_instance_segmentation_by_kmeans(
                     a, b, c)
                 instance_img = instance_img.astype(np.int64)
                 semantic_img = np.argmax(a, axis=-1).astype(np.int64)
-                
+                offset_x=(b[:,:,0]+1.0)*0.5
+                offset_y=(b[:,:,1]+1.0)*0.5
                 if len(xy_local_max) > 0:
                     h, w = instance_img.shape
                     center_img = np.zeros((h, w), np.uint8)
@@ -176,8 +177,8 @@ class is_simple(basic_net.instance_segmentation_basic):
                 print('center_img shape',center_img.shape,center_img.dtype)
                 print('unique center_img',np.unique(center_img))
                 img=img.astype(np.uint8)
-                show_images([img, instance_img, semantic_img, center_img],
-                            ['image_2', 'instance', 'semantic', 'center'])
+                show_images([img, instance_img, semantic_img, center_img,offset_x,offset_y],
+                            ['image_2', 'instance', 'semantic', 'center','offset_x','offset_y'])
                 count = count+1
                 if count >= n:
                     break
@@ -200,10 +201,10 @@ if __name__ == '__main__':
     config['encoder'] = 'mobilenet'
     config['epoches'] = 30
     config['category_weight'] = 100
-    config['center_threshold'] = 0.1
+    config['center_threshold'] = 0.001
     config['center_min_gap'] = 5
 
-    app = 'train'
+    app = 'showcase'
     for sub_version in ['one_stage', 'two_stage']:
         config['sub_version'] == sub_version
         config['note'] = sub_version
