@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 motion net structure for semantic segmentation
-Total params: 5,673,848
-Trainable params: 4,209,388
-Non-trainable params: 1,464,460
-
+semantic_segmentation_multi_task with inner loss
 """
-
 import semantic_segmentation_basic
 from models import model_basic
 import keras
@@ -14,7 +10,16 @@ from keras.layers import Conv2D, Conv2DTranspose, Reshape
 from dataset_rob2018 import dataset_rob2018
 import numpy as np
 import os
+import keras.backend as K
+import tensorflow as tf
 from keras.backend import tf as ktf
+
+tf.app.flags.DEFINE_string('app', 'version', 'application name')
+tf.app.flags.DEFINE_integer('batch_size', 20, 'Batch size')
+tf.app.flags.DEFINE_integer('epoches', 30, 'epoches')
+
+FLAGS = tf.app.flags.FLAGS
+tg=tf.data.Dataset.from_generator
 
 class Interp(keras.layers.Layer):
 
@@ -39,7 +44,27 @@ class Interp(keras.layers.Layer):
         config['new_size'] = self.new_size
         return config
     
-class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentation_basic):
+class CustomRegularization(keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(CustomRegularization, self).__init__(**kwargs)
+
+    def call(self ,x ,mask=None):
+        ld=x[0]
+        rd=x[1]
+        bce = keras.losses.mse(ld, rd)
+        loss2 = K.sum(bce)
+        self.add_loss(loss2,x)
+        #you can output whatever you need, just update output_shape adequately
+        #But this is probably useful
+        return bce
+
+    def compute_output_shape(self, input_shape):
+        return tuple([None,1])
+
+def zero_loss(y_true, y_pred):
+    return K.zeros_like(y_pred)
+
+class semantic_segmentation_multi_task(semantic_segmentation_basic.semantic_segmentation_basic):
     def __init__(self, config):
         self.config = config
         self.name = self.__class__.__name__
@@ -53,16 +78,30 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
         else:
             self.channel_axis = -1
         self.model=self.get_model()
-
+    
+    def regen(self,gen):
+        assert self.config['reshape_output']==False
+        for x,y in gen:
+            b,h,w,c=y.shape
+            outputs=[y]
+            for i in range(self.config['psp_start_layer']):
+                cr_i=np.random.rand(b,1)
+                outputs.append(cr_i)
+        
+            yield x,outputs
+        
     def train(self):
         if self.config['test_mean_iou'] == True:
             metrics=self.get_metrics(self.config['class_number'])
         else:
             metrics=self.get_metrics()
-        
-        self.model.compile(loss='mse',
+        losses=['mse']
+        for i in range(self.config['psp_start_layer']):
+            losses.append(zero_loss)
+            
+        self.model.compile(loss=losses,
                            optimizer='adam',
-                           metrics=metrics)
+                           metrics={'main_output':metrics})
 
         dataset = self.dataset
         train_main_input_paths, val_main_input_paths = dataset.get_train_val()
@@ -72,15 +111,16 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
 
         batch_size = self.config['batch_size']
         print('batch size is',batch_size)
-        self.model.fit_generator(generator=dataset.batch_gen_images(train_main_input_paths, batch_size),
+        self.model.fit_generator(generator=self.regen(dataset.batch_gen_images(train_main_input_paths, batch_size)),
                                  steps_per_epoch=len(
                                      train_main_input_paths)//batch_size,
                                  epochs=self.config['epoches'],
                                  verbose=1,
                                  callbacks=self.get_callbacks(self.config),
-                                 validation_data=dataset.batch_gen_images(
-                                     val_main_input_paths, batch_size),
+                                 validation_data=self.regen(dataset.batch_gen_images(
+                                     val_main_input_paths, batch_size)),
                                  validation_steps=len(val_main_input_paths)//batch_size)
+    
     @staticmethod
     def interp_block(prev_layer,strides,target_shape):
         x=keras.layers.AveragePooling2D(pool_size=strides,strides=strides)(prev_layer)
@@ -108,7 +148,7 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
                              interp_block2,
                              interp_block3])
         return x
-        
+    
     def get_model(self):
         # h, w, c = self.config['input_shape']
         backbone_layers = model_basic.get_encoder(self.config)
@@ -131,6 +171,8 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
         layer_depth = len(input_layers)
         deconv_output = None
         model = None
+        
+        merge_layers=[]
         for i in range(layer_depth):
             if i == 0:
 #                print('input_layer class is',input_layers[-i-1].__class__)
@@ -157,7 +199,7 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
                     merge_output = keras.layers.Activation('relu')(merge_output)
                     merge_output = keras.layers.Dropout(
                         rate=drop_ratio)(merge_output)
-
+            
             if i < layer_depth - 1:
                 # input_filters=merge_output.shape[channel_axis].value
                 # target_filters=input_layers[-i-2].output_shape[channel_axis]
@@ -171,23 +213,46 @@ class semantic_segmentation_psped(semantic_segmentation_basic.semantic_segmentat
                 deconv_output = keras.layers.Activation('relu')(deconv_output)
                 deconv_output = keras.layers.Dropout(
                     rate=drop_ratio)(deconv_output)
-
+                
+                merge_layers.append(merge_output)
             else:
-                outputs = Conv2D(filters=self.config['class_number'],
+                main_output = Conv2D(filters=self.config['class_number'],
                                  kernel_size=(3, 3),
                                  activation='softmax',
                                  padding='same',
+                                 name='main_output',
                                  data_format=data_format)(merge_output)
+                
+                seg_outputs = [main_output]
+                merge_layers.reverse()
+                for idx,layer in enumerate(merge_layers):
+                    aux_output=Conv2D(filters=self.config['class_number'],
+                                     kernel_size=(3, 3),
+                                     activation='softmax',
+                                     padding='same',
+                                     name='aux_output_'+str(idx),
+                                     data_format=data_format)(layer)
+                    seg_outputs.append(aux_output)
+                
+                net_outputs = [main_output]
+                for idx,output in enumerate(seg_outputs):
+                    if idx==0:
+                        continue
+                    else:
+                        pool_output=keras.layers.AvgPool2D(pool_size=(2,2),strides=(2,2))(seg_outputs[idx-1])
+                        cr = CustomRegularization(name='cr_'+str(idx))([pool_output,output])
+                        net_outputs.append(cr)
+                
                 if self.config['reshape_output']:
-                    b,h,w,c=outputs.get_shape().as_list()
-                    outputs = Reshape((h*w,c), input_shape=(h,w,c))(outputs)
+                    b,h,w,c=main_output.get_shape().as_list()
+                    main_output = Reshape((h*w,c), input_shape=(h,w,c))(main_output)
                     
                 model = keras.models.Model(inputs=input_layers[0].input,
-                                           outputs=outputs)
+                                           outputs=net_outputs)
 
         return model
 
-if __name__ == '__main__':
+def main(argv=None):
     config=semantic_segmentation_basic.get_default_config()
 #    config['dataset_name']='kitti2015'
     config['dataset_name']='cityscapes'
@@ -200,37 +265,15 @@ if __name__ == '__main__':
     config['test_mean_iou']=True
     
     config['input_shape'] = [224, 224, 3]
-    config['reshape_output']=True
+    config['reshape_output']=False
     config['psp_start_layer']=3
     config['note']='_'.join([config['encoder'],'psp'+str(config['psp_start_layer'])])
     
-    encoders=['mobilenet','resnet50','vgg16','vgg19','DenseNet121','DenseNet169','DenseNet201']
-    app = 'train'
-    
-    for encoder in encoders:
-        config['encoder']=encoder
-        net=semantic_segmentation_psped(config)
-        if app == 'train':
-            # train
-            for i in range(3,5):
-                config['psp_start_layer']=i+1
-                note_list=[config['encoder'],'psp'+str(config['psp_start_layer'])]
-                if config['reshape_output']:
-                    note_list.append('reshape_output')
-                
-                config['note']='_'.join(note_list)
-                net.train()
-                break
-            
-        elif app == 'showcase':
-            # showcase
-            weight_load_dir_or_file = checkpoint_dir = os.path.join(config['checkpoint_dir'],
-                                      config['dataset_name'],
-                                      config['model_name'],
-                                      config['note'])
-            config['weight_load_dir_or_file'] = weight_load_dir_or_file
-            net.showcase(n=3)
-        elif app == 'version':
-            net.show_version()
-    #        for idx,layer in enumerate(net.model.layers):
-    #            print(idx,layer.name,layer.trainable)
+    net=semantic_segmentation_multi_task(config)
+    if FLAGS.app == 'train':
+        net.train()
+    elif FLAGS.app=='version':
+        net.show_version()
+
+if __name__ == "__main__":
+    tf.app.run()

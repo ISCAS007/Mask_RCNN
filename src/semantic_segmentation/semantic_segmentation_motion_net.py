@@ -6,7 +6,7 @@ motion net structure for semantic segmentation
 import semantic_segmentation_basic
 from models import model_basic
 import keras
-from keras.layers import Conv2D, Conv2DTranspose
+from keras.layers import Conv2D, Conv2DTranspose, Reshape
 from dataset_rob2018 import dataset_rob2018
 import numpy as np
 import os
@@ -125,7 +125,10 @@ class semantic_segmentation_motion_net(semantic_segmentation_basic.semantic_segm
                                  activation='softmax',
                                  padding='same',
                                  data_format=data_format)(merge_output)
-
+                
+                if self.config['reshape_output']:
+                    b,h,w,c=outputs.get_shape().as_list()
+                    outputs = Reshape((h*w,c), input_shape=(h,w,c))(outputs)
                 model = keras.models.Model(inputs=input_layers[0].input,
                                            outputs=outputs)
 

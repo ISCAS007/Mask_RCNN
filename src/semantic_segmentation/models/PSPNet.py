@@ -511,7 +511,8 @@ def PSPNet50(
         levels=[6, 3, 2, 1],
         use_se=True,
         output_mode="softmax",
-        upsample_type='deconv'):
+        upsample_type='deconv',
+        reshape_output=True):
 
     # Input shape
     img_input = Input(shape=input_shape)
@@ -586,6 +587,8 @@ def PSPNet50(
                 use_bias=False,
                 name='upscore_{}'.format('out'))(x)
     
+    if reshape_output:
+        out = Reshape((input_shape[0] * input_shape[1], n_labels), input_shape=(input_shape[0], input_shape[1], n_labels))(out)
     # default "softmax"
     out = Activation(output_mode)(out)
 

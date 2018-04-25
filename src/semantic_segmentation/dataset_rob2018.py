@@ -85,7 +85,7 @@ def preprocess_image_bgr(x):
     return x
 
 
-def preprocess_image_mask(y, num_classes):
+def preprocess_image_mask(y, num_classes, reshape_output=False):
     """
     batch_size,height,width=y.shape
     """
@@ -93,7 +93,10 @@ def preprocess_image_mask(y, num_classes):
 
     b, h, w = y.shape
     y_category = keras.utils.to_categorical(y, num_classes)
-    y_category = y_category.reshape([b, h, w, num_classes])
+    if reshape_output:
+        y_category = y_category.reshape([b, h*w, num_classes])
+    else:
+        y_category = y_category.reshape([b, h, w, num_classes])
     return y_category
 
 
@@ -169,7 +172,10 @@ class dataset_rob2018():
         self.dataset_test_root = config['dataset_test_root']
         self.task = config['task']
         self.target_size = config['target_size']
-
+        self.reshape_output=False
+        if 'reshape_output' in config.keys():
+            self.reshape_output=config['reshape_output']
+        
         self.transfer_id_to_eval = False
         if 'transfer_id_to_eval' in config.keys():
             self.transfer_id_to_eval = config['transfer_id_to_eval']
@@ -255,7 +261,7 @@ class dataset_rob2018():
                         y = self.transfer_image_mask_id(y)
 
                     images_batchs.append(preprocess_image_mask(
-                        y, self.num_classes))
+                        y, self.num_classes, self.reshape_output))
                 elif _task == 'instance':
                     y_category = [cv2.resize(
                         img, self.target_size, interpolation=cv2.INTER_NEAREST) for img in img_list]
@@ -264,7 +270,7 @@ class dataset_rob2018():
 
                     y = []
                     y.append(preprocess_image_mask(
-                        y_category, self.num_classes))
+                        y_category, self.num_classes, self.reshape_output))
 
                     # center offset [-1,1] + center mask [0,1]
                     y_offset, y_center = get_centered_data(

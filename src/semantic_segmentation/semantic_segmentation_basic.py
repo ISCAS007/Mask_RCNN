@@ -33,7 +33,9 @@ def get_default_config():
     config = {}
     config['encoder'] = 'vgg16'
     # model input size, use None for convinience, but in fact use 224x224
-    config['input_shape'] = [None, None, None]
+    config['input_shape'] = [224, 224, 3]
+    # weather to reshape output or not
+    config['reshape_output'] = False
     # model output size, for benchmark, we need post-processing
     config['target_size'] = (224, 224)
     config['optimizer'] = 'adam'
@@ -107,6 +109,7 @@ class semantic_segmentation_basic():
         version_dict['semantic_segmentation_motion_net'] = '0.7'
         version_dict['semantic_segmentation_psp'] = '0.8'
         version_dict['semantic_segmentation_psped'] = '0.9'
+        version_dict['semantic_segmentation_multi_task'] = '1.0'
         return version_dict[class_name]
 
     @staticmethod
@@ -150,6 +153,7 @@ class semantic_segmentation_basic():
     def show_version(self):
         print('config is'+'*'*100+'\n')
         json.dumps(self.config)
+        print(self.config)
         self.model.summary()
 
     @staticmethod

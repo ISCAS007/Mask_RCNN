@@ -4,6 +4,9 @@
 Created on Wed Apr 18 14:12:32 2018
 
 @author: yzbx
+Total params: 65,437,056
+Trainable params: 65,378,816
+Non-trainable params: 58,240
 """
 
 import semantic_segmentation_basic
@@ -78,7 +81,8 @@ class semantic_segmentation_psp(semantic_segmentation_basic.semantic_segmentatio
     def get_model(self):
         input_shape = self.config['target_size']+(3,)
         model = PSPNet50(input_shape=input_shape,
-                         n_labels=self.config['class_number'])
+                         n_labels=self.config['class_number'],
+                         reshape_output=self.config['reshape_output'])
 
         return model
 
@@ -94,7 +98,7 @@ if __name__ == '__main__':
     config['epoches'] = 30
     config['test_mean_iou'] = True
     # model input size, use None for convinience, but in fact use 224x224
-    config['input_shape'] = [512, 512, None]
+    config['input_shape'] = [512, 512, 3]
     # model output size, for benchmark, we need post-processing
     config['target_size'] = (512, 512)
     

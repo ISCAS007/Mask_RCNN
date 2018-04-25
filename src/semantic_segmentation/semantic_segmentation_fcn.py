@@ -60,7 +60,8 @@ class semantic_segmentation_fcn(semantic_segmentation_basic.semantic_segmentatio
         model = globals()[model_fcn](weight_decay=self.config['weight_decay_fcn'],
                                      input_shape=input_shape,
                                      batch_momentum=self.config['batchnorm_momentum'],
-                                     classes=self.config['class_number'])
+                                     classes=self.config['class_number'],
+                                     reshape_output=self.config['reshape_output'])
 
         return model
 
